@@ -1,13 +1,12 @@
-const got = require('got');
-const ProxyAgent = require('proxy-agent');
+const got = require("got");
+const ProxyAgent = require("proxy-agent");
 
-const { PassThrough } = require('stream');
-const { readStreamToString } = require('apify-shared/streams_utilities');
-const RequestError = require('./request_error');
-const decompress = require('./decompress');
-const addResponsePropertiesToStream = require('./add_response_properties_to_stream');
-const createCaseSensitiveHook = require('./create_case_sensitive_hook');
-
+const { PassThrough } = require("stream");
+const { readStreamToString } = require("apify-shared/streams_utilities");
+const RequestError = require("./request_error");
+const decompress = require("./decompress");
+const addResponsePropertiesToStream = require("./add_response_properties_to_stream");
+const createCaseSensitiveHook = require("./create_case_sensitive_hook");
 
 /**
  * Sends a HTTP request and returns the response.
@@ -49,6 +48,8 @@ const createCaseSensitiveHook = require('./create_case_sensitive_hook');
  *  TCP connection timeout will overrule the timeout option (the default in Linux can be anywhere from 20-120 seconds).
  * @param [options.proxyUrl]
  *  An HTTP proxy to be used. Supports proxy authentication with Basic Auth.
+ *  @param [options.proxyApi]
+ *  An HTTP proxy to be used. Supports proxy by url.
  * @param [options.ignoreSslErrors=false]
  *  If `true`, requires SSL/TLS certificates to be valid.
  * @param [options.abortFunction=null]
@@ -76,10 +77,10 @@ const createCaseSensitiveHook = require('./create_case_sensitive_hook');
  * @name httpRequest
  */
 
-module.exports = async (options) => {
+module.exports = async options => {
     const {
         url,
-        method = 'GET',
+        method = "GET",
         headers = {},
         followRedirect = true,
         maxRedirects = 20,
@@ -92,6 +93,7 @@ module.exports = async (options) => {
         stream = false,
         useBrotli = false,
         proxyUrl,
+        proxyApi,
         payload,
         useCaseSensitiveHeaders,
         ...possibleGotOptions // Such as cookieJar.
@@ -101,7 +103,9 @@ module.exports = async (options) => {
         ...possibleGotOptions, // Add it first to be overridden in case of conflict.
         url,
         method,
-        headers: Object.assign({}, headers, { 'Accept-Encoding': `gzip, deflate${useBrotli ? ', br' : ''}` }),
+        headers: Object.assign({}, headers, {
+            "Accept-Encoding": `gzip, deflate${useBrotli ? ", br" : ""}`
+        }),
         followRedirect,
         maxRedirects,
         timeout: timeoutSecs * 1000,
@@ -113,12 +117,14 @@ module.exports = async (options) => {
         decompress: false,
         retry: { retries: 0, maxRetryAfter: 0 },
         hooks: {
-            beforeRequest: [],
-        },
+            beforeRequest: []
+        }
     };
 
     if (json && !decodeBody) {
-        throw new Error('If the "json" parameter is true, "decodeBody" must be also true.');
+        throw new Error(
+            'If the "json" parameter is true, "decodeBody" must be also true.'
+        );
     }
 
     if (proxyUrl) {
@@ -126,29 +132,35 @@ module.exports = async (options) => {
 
         requestOptions.agent = {
             https: agent,
-            http: agent,
+            http: agent
         };
     }
 
+    if (proxyApi) {
+        requestOptions.url = new URL(`${proxyApi}`);
+    }
+
     if (json) {
-        requestOptions.headers = Object.assign({}, requestOptions.headers, { 'Content-Type': 'application/json' });
+        requestOptions.headers = Object.assign({}, requestOptions.headers, {
+            "Content-Type": "application/json"
+        });
     }
 
     if (useCaseSensitiveHeaders) {
-        requestOptions.hooks.beforeRequest.push(createCaseSensitiveHook(requestOptions));
+        requestOptions.hooks.beforeRequest.push(
+            createCaseSensitiveHook(requestOptions)
+        );
     }
 
     return new Promise((resolve, reject) => {
         const requestStream = got(requestOptions)
-            .on('error', err => reject(err))
-            .on('response', async (res) => {
+            .on("error", err => reject(err))
+            .on("response", async res => {
                 let body;
                 let shouldAbort;
 
                 if (throwOnHttpErrors && res.statusCode >= 400) {
-                    return reject(
-                        new RequestError('Request failed', res),
-                    );
+                    return reject(new RequestError("Request failed", res));
                 }
 
                 try {
@@ -164,7 +176,10 @@ module.exports = async (options) => {
                     res.destroy();
 
                     return reject(
-                        new RequestError(`Request for ${url} aborted due to abortFunction`, res),
+                        new RequestError(
+                            `Request for ${url} aborted due to abortFunction`,
+                            res
+                        )
                     );
                 }
                 let decompressedResponse;
@@ -176,14 +191,17 @@ module.exports = async (options) => {
                 }
 
                 // Error handler for decompress stream
-                decompressedResponse.on('error', error => reject(error));
+                decompressedResponse.on("error", error => reject(error));
 
                 if (stream) {
                     // Stream need to piped to PassThrough to stay readable
                     const passThrough = new PassThrough();
                     decompressedResponse.pipe(passThrough);
                     // Add http.IncomingMessage properties to decompress stream.
-                    const streamWithResponseAttributes = addResponsePropertiesToStream(passThrough, res);
+                    const streamWithResponseAttributes = addResponsePropertiesToStream(
+                        passThrough,
+                        res
+                    );
 
                     return resolve(streamWithResponseAttributes);
                 }
@@ -191,23 +209,36 @@ module.exports = async (options) => {
                 try {
                     body = await readStreamToString(decompressedResponse);
                 } catch (e) {
-                    if (e.message === 'incorrect header check') {
-                        console.log('Incorrect header check. Try to use different accept-encoding header');
+                    if (e.message === "incorrect header check") {
+                        console.log(
+                            "Incorrect header check. Try to use different accept-encoding header"
+                        );
                     }
-                    return reject(new RequestError('Could not convert stream to string', decompressedResponse));
+                    return reject(
+                        new RequestError(
+                            "Could not convert stream to string",
+                            decompressedResponse
+                        )
+                    );
                 }
 
                 if (json) {
                     try {
                         body = await JSON.parse(body);
                     } catch (e) {
-                        return reject(new RequestError('Could not parse the body', decompressedResponse));
+                        return reject(
+                            new RequestError(
+                                "Could not parse the body",
+                                decompressedResponse
+                            )
+                        );
                     }
                 }
 
                 res.body = body;
 
                 return resolve(res);
-            }).resume();
+            })
+            .resume();
     });
 };
