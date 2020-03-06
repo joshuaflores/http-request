@@ -137,7 +137,7 @@ module.exports = async options => {
     }
 
     if (proxyApi) {
-        requestOptions.url = new URL(`${proxyApi}`);
+        requestOptions.url = new URL(`${proxyApi}${requestOptions.url}`);
     }
 
     if (json) {
